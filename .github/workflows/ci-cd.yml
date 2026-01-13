@@ -1,0 +1,48 @@
+name: CI-CD React App Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout code
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Build Docker image (CI)
+    - name: Build Docker image
+      run: docker build -t react-app .
+
+    # Setup SSH
+    - name: Configure SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    # Copy project to EC2
+    - name: Copy files to EC2
+      run: |
+        rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
+        ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/react-app
+
+    # Deploy on EC2 (CD)
+    - name: Deploy application on EC2
+      run: |
+        ssh -o StrictHostKeyChecking=no \
+        ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+
+        cd react-app
+
+        docker stop react-container || true
+        docker rm react-container || true
+
+        docker build -t react-app .
+        docker run -d -p 80:80 --name react-container react-app
+
+        EOF
